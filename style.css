@@ -156,10 +156,18 @@ body {
     background-color: #45a049;
 }
 
+.control-mode .auto-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center the content, including the button */
+}
+
 .control-mode .auto-content p {
     font-size: 18px;
     margin-bottom: 10px;
     font-family: 'Montserrat', sans-serif;
+    text-align: left; /* Keep text aligned left */
+    width: 100%; /* Ensure text spans the full width */
 }
 
 .control-mode .auto-content .label {
@@ -272,4 +280,142 @@ input:checked + .slider:before {
 .gradient-end {
     stop-color: #89CFF0;
     stop-opacity: 1;
+}
+
+/* Modal Overlay */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+/* Modal Content */
+.modal-content {
+    background-color: #8AB2A6;
+    border-radius: 10px;
+    width: 400px;
+    max-width: 90%;
+    padding: 20px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    color: white;
+}
+
+/* Modal Header */
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.modal-header h2 {
+    font-size: 24px;
+    font-family: 'Poppins', sans-serif;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.close-btn:hover {
+    color: #e74c3c;
+}
+
+/* Modal Body */
+.modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 5px;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.form-group input,
+.form-group textarea {
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    font-family: 'Poppins', sans-serif;
+    background-color: #f5f5d5;
+    color: #333;
+}
+
+.form-group textarea {
+    height: 100px;
+    resize: none;
+}
+
+/* Modal Footer */
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.save-btn {
+    padding: 10px 20px;
+    background-color: #2ecc71;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    font-family: 'Poppins', sans-serif;
+    font-weight: bold;
+}
+
+.save-btn:hover {
+    background-color: #45a049;
+}
+
+/* Styling for the Send Data to ESP32 button */
+.esp32-btn {
+    background-color: #2ecc71; 
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 40px; 
+    font-size: 16px;
+    cursor: pointer;
+    height: 60px; 
+    width: 100%; 
+    box-sizing: border-box;
+    font-weight: bold;
+    font-family: 'Poppins', sans-serif;
+    transition: background-color 0.3s ease;
+    margin-bottom: 10px; 
+    margin-left: auto; 
+    margin-right: auto;
+}
+
+.esp32-btn:hover {
+    background-color: #45a049; /* Darker green on hover */
+}
+
+.esp32-btn:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
 }

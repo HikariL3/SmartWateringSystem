@@ -73,7 +73,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 gaugeValue.textContent = '45%';
                 updateGauge(45);
                 tempValue.textContent = '25°C';
-                airMoisValue.textContent = 'AIR MOISTURE: No data';
+                airMoisValue.textContent = 'HUMIDITY: No data';
             }
 
             // Update the card height when the plant info changes

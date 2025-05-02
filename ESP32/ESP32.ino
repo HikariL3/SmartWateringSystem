@@ -25,9 +25,9 @@ Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy c�
 #include <ArduinoJson.h>
 #include <RTClib.h>
 
-const char* ssid = "Meow ~"; //change to the wifi your laptop is using
-const char* password = "nhaconuoimeo"; //same as above
-const char* serverHost = "192.168.1.20"; // Backend host - CHANGE TO MATCH YOUR CURRENT IP
+const char* ssid = "Huong Trinh Bakery "; //change to the wifi your laptop is using - 2.4GHz only
+const char* password = "lekhang0704"; //same as above
+const char* serverHost = "192.168.1.7"; // Backend host - CHANGE TO MATCH YOUR CURRENT IP
 const int serverPort = 3000; // Backend port
 const char* serverPath = "/history"; // Backend path
 
@@ -97,9 +97,9 @@ bool getTime(String &date, String &time) {
         Serial.println("failed to obtain time from DS3231");
         return false;
      }
-     //FORMAT AS DD/MM/YYYY
+     //FORMAT AS YYYY-MM-DD
      char dateStr[11];
-     snprintf(dateStr, sizeof(dateStr),"%02d/%02d/%04d", now.day(),now.month(), now.year());
+     snprintf(dateStr, sizeof(dateStr),"%04d-%02d-%02d", now.year(),now.month(), now.day());
      date = String(dateStr);
      //FORMAT AS HH:MM:SS
      char timeStr[9];
@@ -231,7 +231,7 @@ void setup() {
 
     if (!rtc.begin()) {
     Serial.println("Couldn't find DS3231 RTC");
-    while (1); // Halt if RTC not found
+    //while (1); // Halt if RTC not found
     }
 
     if (rtc.lostPower()) {
@@ -368,8 +368,8 @@ void loop() {
     String date, time;
     if (!getTime(date, time)) {
         Serial.println("Failed to read from DS3231");
-        date = "19/04/2025"; // Fallback value
-        time = "10:33:25";
+        date = "2025/05/03"; // Fallback value
+        time = "12:39:40";
         //implement 'if fail to read, continue to read' later
     }
 
@@ -422,3 +422,16 @@ void loop() {
     } 
     delay(100); //avoid tight loop
 }
+
+/* 
+To-do list:
+- Wire DS3231 and water level sensor
+- Check DS3231 and water level functionality
+- While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record
+- Warning when water is running low (email, pop-up)
+- IMPLEMENT GRAPH DATA ON SERVER SIDE
+- Add error handling for DHT22 and DS3231 instead of using fallback value
+Further enhancement: 
+- Implement button responsiveness on server side (need clarification)
+- Make a simple model
+*/

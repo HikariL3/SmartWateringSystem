@@ -87,11 +87,10 @@ app.post('/plants', (req, res) => {
     });
 });
 
-app.get('/history/:plantID', (req, res) => {
-    const { plantID } = req.params;
-    const query = 'SELECT * FROM history WHERE plantID = ? ORDER BY recorded DESC';
-    db.query(query, [plantID], (err, results) => {
-        if (err) {
+app.get('/history/latest', (req, res) => {
+    const query = 'SELECT * FROM history ORDER BY recorded DESC';
+    db.query(query, (err, results) => {
+        if(err){
             console.error('Error fetching history:', err);
             res.status(500).json({ error: 'Error fetching history' });
             return;

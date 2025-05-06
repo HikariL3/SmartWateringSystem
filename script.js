@@ -39,10 +39,10 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // Fetch the latest history entry for a plant to get soilMoisture and temperature
+    // Fetch the latest history entry to get data
     async function fetchHistory(plantID) {
         try {
-            const response = await fetch(`http://localhost:3000/history/${plantID}`);
+            const response = await fetch(`http://localhost:3000/history/latest`);
             if (!response.ok) {
                 throw new Error('Failed to fetch history');
             }
@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', function () {
             upperThreshold.textContent = `${selectedPlant.upperThreshold}%`;
             plantInfo.textContent = selectedPlant.info;
 
-            const latestHistory = await fetchHistory(plantID);
+            const latestHistory = await fetchHistory();
             if (latestHistory) {
                 gaugeValue.textContent = `${latestHistory.soilMoisture}%`;
                 updateGauge(latestHistory.soilMoisture);

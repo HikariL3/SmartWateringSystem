@@ -1,29 +1,31 @@
 //BEFORE RUNNING
-//Make sure you have necessary library installed for below code to run
+//NECESSARY LIBRARY
 /*
 - RTClib by Adafruit
 - ESPAsyncWebSrv by dvarrel / or ESPAsyncWebServer by lacamera (need testing)
 - Async TCP by ESP32 Async
 - DHT sensor library by Adafruit
 - AwslotWiFiClient by Danila....
-- Adafruit BusIO by Adadruit
-- Adafruit GFX Library
 - Adafruit Unified Sensor
 - AdafruitJson by Benoit 
+- ESP Mail Client by Mobizt
 
 Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy cái này, từng cái một, nếu được thì không cần cài thêm. 
 - Arduino Uno WiFi Dev Ed Library by Arduino 
 - ESPAsyncTCP by dvarrel
 - Adafruit SSD1306
 */
-//IMPORTANT - go to board manager -> INSTALLED esp32 by Espressif -> VERSION 3.0.7 - NEWER VERSION WILL GET tcp_alloc ERROR
-
+//NECESSARY BOARD - go to board manager -> INSTALLED esp32 by Espressif -> VERSION 3.0.7 - NEWER VERSION WILL GET tcp_alloc ERROR
+//BEFORE UPLOADING: Tools -> Partition Scheme -> NO OTA () (2MB APP/2MB SPIFFS) - using Default will fuck up the memory
+#include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebSrv.h>
 #include <SPIFFS.h>
 #include <DHT.h>
 #include <ArduinoJson.h>
 #include <RTClib.h>
+#include <ESP_Mail_Client.h>
+//#include <NTPClient.h>
 
 const char* ssid = "Meow ~"; //change to the wifi your laptop is using - 2.4GHz only
 const char* password = "nhaconuoimeo"; //same as above
@@ -42,14 +44,24 @@ IPAddress secondaryDNS(8, 8, 4, 4);
 #define RELAY_PIN 17
 #define SOIL_MOISTURE_PIN 34 
 #define DHTPIN 23
+#define WATER_LEVEL_SENSOR 14
+#define CLOCK_INTERRUPT_PIN GPIO_NUM_4
 #define DHTTYPE DHT22
 DHT dht(DHTPIN, DHTTYPE);
 
+//mail service
+#define ESP_MAIL_DEFAULT_FLASH_FS SPIFFS
+#define SMTP_HOST "smtp.gmail.com"
+#define SMTP_PORT 465
+#define AUTHOR_EMAIL "23520617@gm.uit.edu.vn"
+#define AUTHOR_PASSWORD "exhyfgjkflvjnetl" //replace with your app password on uploading, DO NOT PUBLISH THIS CODE UNLESS THIS ONE IS REPLACED
+#define RECIPIENT_EMAIL "levinhhuyyt1@gmail.com"
 // Global variables 
 // - For data
 float temperature = 0.0;
 float humidity = 0.0;
 float soilMoisture = 0.0;
+int water = 0; //analog read for this one
 String date = "2025/05/03"; 
 String time0 = "12:39:40";
 
@@ -72,8 +84,14 @@ const size_t MAX_FILE_SIZE = 10*1024; //10 kB, can be adjusted
 
 const uint64_t DEEP_SLEEP_DURATION = 1 * 3600 * 1000000ULL; // 1 hour in microsec
 bool isDSMode = false; //Deep Sleep Mode
+bool dhtSent = false; //flag for sending email
+bool rtcSent = false;
+bool waterSent = false;
+
 AsyncWebServer server(80);
 RTC_DS3231 rtc; //object
+SMTPSession smtp;
+Session_Config config;
 
 bool waitForNetwork(uint8_t retries = 10) {
     uint8_t attempt = 0;
@@ -101,6 +119,88 @@ void IRAM_ATTR onAlarm() {
     //empty
 }
 
+void smtpCallback(SMTP_Status status) {
+    Serial.println(status.info());
+    if (status.success()) {
+        Serial.println("----------------");
+        ESP_MAIL_PRINTF("Message sent success: %d\n", status.completedCount());
+        ESP_MAIL_PRINTF("Message sent failed: %d\n", status.failedCount());
+        Serial.println("----------------\n");
+
+        for (size_t i = 0; i < smtp.sendingResult.size(); i++) {
+            SMTP_Result result = smtp.sendingResult.getItem(i);
+            ESP_MAIL_PRINTF("Message No: %d\n", i + 1);
+            ESP_MAIL_PRINTF("Status: %s\n", result.completed ? "success" : "failed");
+            ESP_MAIL_PRINTF("Date/Time: %s\n", MailClient.Time.getDateTimeString(result.timestamp, "%B %d, %Y %H:%M:%S").c_str());
+            ESP_MAIL_PRINTF("Recipient: %s\n", result.recipients.c_str());
+            ESP_MAIL_PRINTF("Subject: %s\n", result.subject.c_str());
+        }
+        Serial.println("----------------\n");
+        smtp.sendingResult.clear(); // Clear results to free memory
+    }
+}
+
+void emailSetup() {
+    MailClient.networkReconnect(true); //reconnection option
+    smtp.debug(1); //0 for no debugging, 1 for basic debugging
+    smtp.callback(smtpCallback);
+     //for user defined session credentials 
+    config.server.host_name = SMTP_HOST;
+    config.server.port = SMTP_PORT;
+    config.login.email = AUTHOR_EMAIL;
+    config.login.password = AUTHOR_PASSWORD;
+    config.login.user_domain = "";
+    config.time.ntp_server = F("pool.ntp.org,time.nist.gov");
+    config.time.gmt_offset = 7; //GMT + 7
+    config.time.day_light_offset = 0;
+}
+
+void emailSending(const char* subject, const char* content) { //using char* since it requires c_str
+    SMTP_Message message;
+    message.sender.name = F("ESP32");
+    message.sender.email = AUTHOR_EMAIL;
+    message.subject = subject;
+    message.addRecipient(F("HikariL3"), RECIPIENT_EMAIL);
+
+    message.text.content = content;
+    message.text.charSet = "utf-8";
+    message.text.transfer_encoding = Content_Transfer_Encoding::enc_7bit;
+    message.priority = esp_mail_smtp_priority::esp_mail_smtp_priority_low;
+    message.response.notify = esp_mail_smtp_notify_success | esp_mail_smtp_notify_failure | esp_mail_smtp_notify_delay;
+
+    const int maxRetries = 3;
+    int retries = 0;
+    bool sent = false;
+
+    while(retries < maxRetries && !sent) {
+        if (!smtp.connect(&config)) {
+            Serial.println(" Mail service connection error: " + smtp.errorReason());
+            retries++;
+            delay(2000);
+            continue;
+        }
+        if (!smtp.isLoggedIn()) {
+            Serial.println("\nNot yet logged in.");
+        } else {
+        if (smtp.isAuthenticated())
+            Serial.println("\nSuccessfully logged in.");
+        else
+            Serial.println("\nConnected with no Auth.");
+        }
+        if (!MailClient.sendMail(&smtp, &message)) {
+            Serial.println(" Mail service connection error: " + smtp.errorReason());
+            retries++;
+            delay(2000);
+        } else {
+            Serial.println("\nEmail sent successfully!");
+            sent = true;
+        }
+    }
+    if(!sent) {
+    Serial.println("\nFailed to send email after " + String(maxRetries) + " retries");
+    }
+}
+
 void setDSAlarm(){
     rtc.disable32K(); //we dont use this
     rtc.writeSqwPinMode(DS3231_OFF);
@@ -113,18 +213,23 @@ void setDSAlarm(){
     //set alarm 1 to trigger at 00:00:00 everyday
     DateTime now = rtc.now();
     DateTime alarmTime = DateTime(now.year(), now.month(), now.day(), 0, 0, 0);
-    if (now.hour() >= 0 && now.hour < 5) {
+    if (now.hour() >= 0 && now.hour() < 5) {
         //intended deep sleep time, enter deep sleep (if run at compile time)
         isDSMode = true;
+        if (now.hour() < 4) {
+            alarmTime = DateTime(now.year(), now.month(), now.day(), now.hour() + 1, 0, 0);
+        }
     } else {
-        if (now.hour() >= 5){
+        if (now.hour() >= 5) {
             alarmTime = alarmTime + TimeSpan(1, 0, 0, 0); //next day
         }
     }
     if (!rtc.setAlarm1(alarmTime, DS3231_A1_Hour)) {
         Serial.println("Error setting daily alarm");
     } else {
-        Serial.println("Daily alarm set for 00:00:00");
+        Serial.println("Alarm set for " + String(alarmTime.year()) + "-" 
+        + String(alarmTime.month()) + "-" + String(alarmTime.day()) + " " 
+        + String(alarmTime.hour()) + ":00:00");
     }
 
     //configure SQW pin for interrupt
@@ -134,16 +239,29 @@ void setDSAlarm(){
 
 void enterDeepSleep() {
     Serial.println("Entering deep sleep for 1 hour...");
+    DateTime now = rtc.now();
+    if (now.hour() < 4) { // Set alarm for next hour if before 04:00
+        DateTime nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour() + 1, 0, 0);
+        if (!rtc.setAlarm1(nextAlarm, DS3231_A1_Hour)) {
+            Serial.println("Error setting hourly alarm");
+        } else {
+            Serial.println("Hourly alarm set for " + String(nextAlarm.hour()) + ":00:00");
+        }
+    }
     esp_sleep_enable_ext0_wakeup(CLOCK_INTERRUPT_PIN, 0); // wake on LOW (SQW is active LOW)
-    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_DURATION); // fallback timer 
+    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_DURATION); // fallback timer - used from 4am - 5am
     esp_deep_sleep_start();
 }
 
 //reader
+int waterLevelSensor(){
+    return analogRead(WATER_LEVEL_SENSOR);
+}
+
 float readSoilMois(){
-    int soil = analogRead(SOIL_MOISTURE_PIN);
-    float soilPercentage = map(soil, 0, 4095, 100,0);
-    if (soilPercentage < 0 ) soilPercentage = 0;
+    int value = analogRead(SOIL_MOISTURE_PIN);
+    float soilPercentage = map(value, 1100, 4095, 100, 0);
+    if (soilPercentage < 0) soilPercentage = 0;
     if (soilPercentage > 100) soilPercentage = 100;
     return soilPercentage;
 }
@@ -151,8 +269,18 @@ float readSoilMois(){
 bool getTime(String &date, String &time0) {
     DateTime now = rtc.now();
      if(!now.isValid()){
-        Serial.println("failed to obtain time from DS3231");
+        Serial.println("Failed to obtain time from DS3231");
+        if(!rtcSent && WiFi.status() == WL_CONNECTED) {
+            emailSending("[DS3231 FAILURE]", "Please check your DS3231 wiring and its power. The system will fail without this sensor!");
+            rtcSent = true;
+            Serial.println("Email notification for DS3231 failure sent");
+        }
         return false;
+     } else {
+        if(rtcSent){
+            Serial.println("DS3231 fixed");
+            rtcSent = false;
+        }
      }
      //FORMAT AS YYYY-MM-DD
      char dateStr[11];
@@ -169,18 +297,40 @@ void collectData(){
     temperature = dht.readTemperature();
     humidity = dht.readHumidity();
     soilMoisture = readSoilMois();
+    water = waterLevelSensor();
 
     if (isnan(temperature) || isnan(humidity)) {
         Serial.println("Failed to read from DHT sensor!");
-        temperature = 0.0; // Fallback value
+        temperature = 0.0; //temporary fallback value
         humidity = 0.0;
-        //implement 'if fail to read, notify user by email' 
+        if(!dhtSent && WiFi.status() == WL_CONNECTED) {
+            emailSending("[DHT FAILURE]", "Please check your DHT22 wirings");
+            dhtSent = true;
+            Serial.println("Email notification for DHT22 failure sent");
+        }
+    } else {
+        if(dhtSent){
+            Serial.println("DHT22 fixed");
+            dhtSent = false;
+        }
     }
     if (!getTime(date, time0)) {
         Serial.println("Failed to read from DS3231");
-        date = "2025/05/03"; // Fallback value
-        time0 = "12:39:40";
-        //implement 'if fail to read, notify user by email'
+        date = "2025/05/03"; 
+        time0 = "12:39:40";   
+    }
+    if(water < 1400){
+        Serial.println("Water level is running low");
+        if(!waterSent && WiFi.status() == WL_CONNECTED) {
+            emailSending("[LOW ON WATER]", "Please refill the water for the pump to run");
+            waterSent = true;
+            Serial.println("Email notification for water refill sent");
+    } else {
+        if(waterSent){
+            Serial.println("Water refilled!");
+            waterSent = false;
+            }
+        }
     }
 }
 
@@ -242,15 +392,14 @@ void processData(){
         Serial.println("Data sent successfully");
         sendSaved();
         } else {
-            Serial.println("failed to connect to server, saving data...");
+            Serial.println("Failed to connect to server, saving data...");
             saveData(payload);
         } 
     } else {
         Serial.println("WiFi disconnected, reconnecting...");
         WiFi.reconnect();
         if (waitForNetwork(15)) {
-            Serial.println("Reconnected to WiFi");
-            Serial.print("IP Address: ");
+            Serial.print("Reconnected to WiFi: ");
             Serial.println(WiFi.localIP());
             if(sendData(payload)){
                 Serial.println("Data sent successfully");
@@ -270,18 +419,18 @@ void processData(){
 void saveData(const String& payload){
     File file = SPIFFS.open(DATA_FILE, FILE_APPEND);
     if(!file){
-        Serial.println("Failed to open file for appending");
+        //Failed to open file for appending
         return; 
     }
     //check file's size
     size_t fileSize = file.size();
      if(fileSize + payload.length() > MAX_FILE_SIZE){
-        Serial.println("File size exceeds limit, deleting oldest entries...");
+        //File size exceeds limit, deleting oldest entries...
         file.close();
         //read entries
         File readFile = SPIFFS.open(DATA_FILE, FILE_READ);
         if(!readFile){
-            Serial.println("Failed to open file for reading");
+            //Failed to open file for reading
             return;
         }
         String allData = readFile.readString();
@@ -289,7 +438,7 @@ void saveData(const String& payload){
         //split into lines
         int newlineIndex = allData.indexOf('\n');
         if(newlineIndex == -1){
-            Serial.println("No data to delete, overwriting file...");
+            //No data to delete, overwriting file...
             SPIFFS.remove(DATA_FILE);
             file = SPIFFS.open(DATA_FILE, FILE_WRITE);
         }
@@ -335,7 +484,7 @@ bool sendData(const String& payload){
 void sendSaved(){
     File file = SPIFFS.open(DATA_FILE, FILE_READ);
     if(!file){
-        Serial.println("No saved data to send");
+        //No saved data to send
         return;
     }
 
@@ -373,6 +522,7 @@ void sendSaved(){
 void setup() {
     Serial.begin(115200);
 
+    // SENSOR INIT SECTION
     // init pin
     pinMode(RELAY_PIN, OUTPUT);
     digitalWrite(RELAY_PIN, LOW); // Pump off 
@@ -389,7 +539,7 @@ void setup() {
 
     if (!rtc.begin()) {
     Serial.println("Couldn't find DS3231 RTC");
-    //while (1) delay (50); // Halt if RTC not found
+    while (1) delay (50); // Halt if RTC not found
     }
 
     if (rtc.lostPower()) {
@@ -397,7 +547,7 @@ void setup() {
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     }
 
-    // Configure static IP
+    // WIFI INIT SECTION
     if (!WiFi.config(local_IP, gateway, subnet, primaryDNS, secondaryDNS)) {
         Serial.println("Failed to configure static IP");
     }
@@ -408,10 +558,14 @@ void setup() {
         Serial.println("Network setup failed, restarting...");
         ESP.restart();
     }
-
+    
+    //DEEP SLEEP SET UP
     setDSAlarm();
 
-    // Add CORS headers 
+    //EMAIL SECTION
+    emailSetup();
+
+    //CORS headers 
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -513,6 +667,29 @@ void setup() {
 }
 
 void loop() {
+    if (rtc.alarmFired(1)) {
+        rtc.clearAlarm(1);
+        DateTime now = rtc.now();
+        if (now.hour() == 0 && now.minute() == 0 && now.second() == 0) {
+            isDSMode = true;
+            Serial.println("Alarm triggered at 00:00:00, entering deep sleep mode");
+        } 
+    }
+
+    DateTime now = rtc.now();
+    if (now.hour() >= 0 && now.hour() < 5) {
+        isDSMode = true;
+    } else {
+        isDSMode = false;
+    }
+
+    if (isDSMode) {
+        collectData();
+        controlAutomatic();
+        processData();
+        enterDeepSleep(); 
+    }
+
     static unsigned long lastCollection = 0;
     unsigned long current = millis();
 
@@ -539,13 +716,12 @@ void loop() {
 
 /* 
 To-do list:
-- Wire DS3231 and water level sensor 
-- Check DS3231 and water level functionality (done with DS3231)
-- While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record (kinda done)
-- Warning when water is running low (email/pop-up)
+- Wire DS3231 and water level sensor (done)
+- Check DS3231 and water level functionality (done)
+- While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record (done)
+- Add error handling for DHT22 and DS3231 instead of using fallback value (done)
+- Warning when water is running low (done)
 - IMPLEMENT GRAPH DATA ON SERVER SIDE
-- Add error handling for DHT22 and DS3231 instead of using fallback value
 Further enhancement: (if time allows)
-- Implement button responsiveness on server side (need clarification)
 - Make a simple model
 */

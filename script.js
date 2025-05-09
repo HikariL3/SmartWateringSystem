@@ -11,6 +11,12 @@ document.addEventListener('DOMContentLoaded', function () {
     const pumpOnBtn = document.querySelector('.control-mode .buttons .on');
     const pumpOffBtn = document.querySelector('.control-mode .buttons .off');
 
+    //variebles for chart
+    const POLLING_INTERVAL = 10000; // Poll every 10 seconds
+    let currentPlantID = null; // Track the currently selected plant
+    let latestTimestamps = {}; // Object to store latest timestamp per plantID
+    let chartInstance = null; // Initializing chart instance
+
     // Fetch plants from the backend and populate the dropdown
     let plants = [];
 
@@ -51,6 +57,22 @@ document.addEventListener('DOMContentLoaded', function () {
             return history.length > 0 ? history[0] : null;
         } catch (error) {
             console.error('Error fetching history:', error);
+            return null;
+        }
+    }
+
+    //fetch all history for chart
+    async function fetchallHistory()
+    {
+        try {
+            const response = await fetch(`http://localhost:3000/history/latest`);
+            if (!response.ok) {
+                throw new Error('Failed to fetch history');
+            }
+            const history = await response.json();
+            return history;
+        } catch (error) {
+            console.error('Error fetching all history:', error);
             return null;
         }
     }
@@ -118,10 +140,17 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // Call fetchPlants to load the plants when the page loads
-    fetchPlants();
+    fetchPlants().then(() => {
+        const initialPlantID = plantSelect.value;
+        updatePlantInfo(initialPlantID);
+        updateChart(initialPlantID, false); // Update chart with the initial plant's history
+        startPolling(); // Start polling for updates
+    });
 
     plantSelect.addEventListener('change', () => {
-        updatePlantInfo(plantSelect.value);
+        const plantID = plantSelect.value;
+        updatePlantInfo(plantID);
+        updateChart(plantID, false); // Update chart with the selected plant's history
     });
 
     function updateGauge(value) {
@@ -351,7 +380,7 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (error) {
             console.error('Error adding plant:', error);
             alert('Error adding plant: ' + error.message);
-        }
+        }   
     });
 
     // Handle the "Send Data to ESP32" button click
@@ -390,4 +419,171 @@ document.addEventListener('DOMContentLoaded', function () {
             alert('Error sending data to ESP32: ' + error.message);
         }
     });
+
+    //get history by plantID
+    const MAX_CHART_ENTRIES = 10; // Define the maximum number of entries to display
+
+    async function getHistoryByPlantID(plantID, since = null, limit = MAX_CHART_ENTRIES) {
+        if (!plantID) {
+        console.error('plantID is required for getHistoryByPlantID');
+        return [];
+        }
+
+        try {
+            let url = `http://localhost:3000/history/${plantID}?limit=${limit}`;
+            if (since) {
+            url += `&since=${encodeURIComponent(since)}`;
+            }
+            const response = await fetch(url);
+            if (!response.ok) {
+            throw new Error(`Failed to fetch history for plantID ${plantID}: ${response.status}`);
+            }
+            const history = await response.json();
+            console.log(`History for plantID ${plantID}:`, history);
+            return Array.isArray(history) ? history : [history].filter(item => item !== null && item !== undefined);
+        } 
+        catch (error) {
+        console.error(`Error fetching history for plantID ${plantID}:`, error);
+        return [];
+        }
+    }
+
+
+    async function updateChart(plantID = null, isIncremental = false) {
+    if (!plantID) {
+        console.warn('plantID is required for updateChart');
+        return;
+    }
+
+    if (currentPlantID !== plantID) {
+        currentPlantID = plantID;
+        latestTimestamps[plantID] = null; // Reset the latest timestamp for the new plant
+        if (chartInstance) {
+            chartInstance.destroy(); // Destroy the existing chart instance
+            chartInstance = null; // Reset the chart instance
+        }
+    }
+
+    let since = latestTimestamps[plantID];
+    if (isIncremental && chartInstance && chartInstance.data.labels.length > 0) {
+        const lastLabel = chartInstance.data.labels[chartInstance.data.labels.length - 1];
+
+    }
+
+    const history = await getHistoryByPlantID(plantID, since);
+    if (!history || history.length === 0) {
+        console.warn('No new history data available for chart');
+        const ctx = document.getElementById('soilMoistureChart').getContext('2d');
+        if (chartInstance) {
+            chartInstance.destroy();
+        } 
+        return;
+    }
+
+    //update latest timestamp
+    if (history.length > 0) 
+    {
+        latestTimestamps[plantID] = history[history.length - 1].recorded; 
+    }
+
+    if (isIncremental && chartInstance) {
+        // Filter and append only new entries
+        const newEntries = history.filter(entry => {
+        const entryTime = new Date(entry.recorded).toISOString().slice(0, 19).replace('T', ' ');
+        return !chartInstance.data.labels.some(label => {
+            const labelTime = new Date(label.replace(/(\d+:\d+:\d+) (AM|PM)/, '$1 $2')).toISOString().slice(0, 19).replace('T', ' ');
+            return labelTime === entryTime;
+            
+            });
+        });
+
+        if (newEntries.length === 0) {
+            console.log('No new entries to add');
+            return; // Skip update if no new data
+        }
+
+        newEntries.forEach(entry => {
+            chartInstance.data.labels.push(new Date(entry.recorded).toLocaleTimeString());
+            chartInstance.data.datasets[0].data.push(entry.soilMoisture);
+        });
+
+            // Enforce entry limit
+        if (chartInstance.data.labels.length > MAX_CHART_ENTRIES) {
+            const excess = chartInstance.data.labels.length - MAX_CHART_ENTRIES;
+            chartInstance.data.labels.splice(0, excess);
+            chartInstance.data.datasets[0].data.splice(0, excess);
+        }
+
+        chartInstance.update();
+        return;
+    }
+
+    const limitedHistory = history.slice(-MAX_CHART_ENTRIES); // Limit to the last 10 entries
+    // Prepare data
+    const labels = history.map(entry => new Date(entry.recorded).toLocaleTimeString());
+    const soilMoistureData = history.map(entry => entry.soilMoisture);
+
+    const ctx = document.getElementById('soilMoistureChart').getContext('2d');
+
+    // Destroy existing chart instance if it exists
+    if (chartInstance) {
+        chartInstance.destroy();
+    }
+
+    // Create new chart
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels, // Time labels for x-axis
+            datasets: [{
+                label: 'Soil Moisture (%)',
+                data: soilMoistureData,
+                borderColor: 'rgba(75, 192, 192, 1)',
+                backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                fill: true,
+                tension: 0.4 // Smooth the line
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Time'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Soil Moisture (%)'
+                    },
+                    beginAtZero: true,
+                    max: 100
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            }
+        }
+    });
+    }
+
+    function startPolling() {
+    setInterval(async () => {
+        if (currentPlantID) {
+            try {
+                await updateChart(currentPlantID, true);
+            } catch (error) {
+                console.error('Polling error:', error);
+            }
+            }
+        }, POLLING_INTERVAL);
+    }
+
+
 });

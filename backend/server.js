@@ -23,7 +23,7 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'hikari',
+    password: process.env.DB_PASSWORD || 'toilaphamhung10',
     database: process.env.DB_NAME || 'watering_system'
 });
 
@@ -56,7 +56,7 @@ app.get('/plants', (req, res) => {
         }
         res.json(results);
     });
-});
+}); 
 
 app.post('/plants', (req, res) => {
     const { Name, info, lowerThreshold, upperThreshold } = req.body;
@@ -116,6 +116,32 @@ app.post('/history', (req, res) => {
             return;
         }
         res.status(201).json({ message: 'History entry added successfully', timeID: result.insertId });
+    });
+});
+
+app.get('/history/:plantID', (req, res) => {
+    const { plantID } = req.params;
+    const since = req.query.since;
+    const limit = parseInt(req.query.limit) || 10; // Default to 10 if not specified
+
+    let query = 'SELECT * FROM history WHERE plantID = ?';
+    let params = [plantID];
+
+    if (since) {
+        query += ' AND recorded > ?';
+        params.push(since);
+    }
+
+    query += ' ORDER BY recorded DESC LIMIT ?';
+    params.push(limit);
+
+    db.query(query, params, (err, results) => {
+        if (err) {
+            console.error('Error fetching history:', err);
+            res.status(500).json({ error: 'Error fetching history' });
+            return;
+        }
+        res.json(results.reverse()); // Reverse to return in ascending order
     });
 });
 

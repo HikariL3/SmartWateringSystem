@@ -431,3 +431,50 @@ input:checked + .slider:before {
     height: 680px !important;
     max-height: 300px;
 }
+
+/* Styling for the Delete Plant dropdown */
+.delete-plant-select {
+    padding: 10px;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    font-family: 'Poppins', sans-serif;
+    background-color: #f5f5d5;
+    color: #333;
+    width: 100%;
+}
+
+/* Cancel Button */
+.cancel-btn {
+    padding: 10px 20px;
+    background-color: #ccc;
+    color: #333;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    font-family: 'Poppins', sans-serif;
+    font-weight: bold;
+    margin-right: 10px;
+}
+
+.cancel-btn:hover {
+    background-color: #b3b3b3;
+}
+
+/* Delete Button */
+.delete-btn {
+    padding: 10px 20px;
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    font-size: 16px;
+    cursor: pointer;
+    font-family: 'Poppins', sans-serif;
+    font-weight: bold;
+}
+
+.delete-btn:hover {
+    background-color: #da190b;
+}

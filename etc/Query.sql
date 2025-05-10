@@ -38,11 +38,4 @@ INSERT INTO history (plantID, soilMoisture, temperature, airMoisture, recorded) 
 (2, 40.80, 30.00, 70.70, '2025-05-08 17:00:00');
 Select * from history where plantID = 2;
 
-INSERT INTO history (plantID, soilMoisture, temperature, airMoisture, recorded) VALUES
-(2, 40.80, 40.00, 80.70, '2025-05-08 18:00:00');
 
-INSERT INTO history (plantID, soilMoisture, temperature, airMoisture, recorded) VALUES
-(2, 50.80, 30.00, 70.70, '2025-05-08 19:00:00');
-
-INSERT INTO history (plantID, soilMoisture, temperature, airMoisture, recorded) VALUES
-(1, 50.80, 30.00, 70.70, '2025-05-08 18:00:00');

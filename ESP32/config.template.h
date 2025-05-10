@@ -10,5 +10,4 @@ const char* ssid = "YOUR_WIFI_NETWORK"; //change to the wifi your laptop is usin
 const char* password = "WIFI_PASSWORD"; //same as above
 const char* serverHost = "192.168.1.XXX"; // Backend host - CHANGE TO MATCH YOUR CURRENT IP
 
-
 #endif

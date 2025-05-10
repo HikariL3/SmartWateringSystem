@@ -14,7 +14,7 @@ const port = process.env.PORT || 3000;
 
 app.use(cors({
     origin: 'http://127.0.0.1:8080',
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'DELETE'],
     allowedHeaders: ['Content-Type']
 }));
 
@@ -237,6 +237,40 @@ app.post('/send-to-esp32', async (req, res) => {
         console.error('Error sending data to ESP32:', error.message);
         res.status(500).json({ error: `Error sending data to ESP32: ${error.message}` });
     }
+});
+
+app.delete('/plants/:plantID', (req, res) => {
+    const { plantID } = req.params;
+
+    if (!plantID) {
+        res.status(400).json({ error: 'plantID is required' });
+        return;
+    }
+
+    const deleteHistoryQuery = 'DELETE FROM history WHERE plantID = ?';
+    db.query(deleteHistoryQuery, [plantID], (err, historyResult) => {
+        if (err) {
+            console.error('Error deleting history entries:', err);
+            res.status(500).json({ error: 'Error deleting associated history entries' });
+            return;
+        }
+
+        const deletePlantQuery = 'DELETE FROM plant WHERE plantID = ?';
+        db.query(deletePlantQuery, [plantID], (err, plantResult) => {
+            if (err) {
+                console.error('Error deleting plant:', err);
+                res.status(500).json({ error: 'Error deleting plant' });
+                return;
+            }
+
+            if (plantResult.affectedRows === 0) {
+                res.status(404).json({ error: 'Plant not found' });
+                return;
+            }
+
+            res.status(200).json({ message: 'Plant deleted successfully' });
+        });
+    });
 });
 
 app.listen(port, '0.0.0.0', () => {

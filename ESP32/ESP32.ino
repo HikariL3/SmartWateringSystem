@@ -17,6 +17,7 @@ Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy c�
 */
 //NECESSARY BOARD - go to board manager -> INSTALLED esp32 by Espressif -> VERSION 3.0.7 - NEWER VERSION WILL GET tcp_alloc ERROR
 //BEFORE UPLOADING: Tools -> Partition Scheme -> NO OTA () (2MB APP/2MB SPIFFS) - using Default will fuck up the memory
+//There is a config.h file that contain personal's info configuration, change it before you run. 
 #include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebSrv.h>
@@ -25,15 +26,13 @@ Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy c�
 #include <ArduinoJson.h>
 #include <RTClib.h>
 #include <ESP_Mail_Client.h>
+#include "config.h"
 
-const char* ssid = "Meow ~"; //change to the wifi your laptop is using - 2.4GHz only
-const char* password = "nhaconuoimeo"; //same as above
-const char* serverHost = "192.168.1.116"; // Backend host - CHANGE TO MATCH YOUR CURRENT IP
 const int serverPort = 3000; // Backend port
 const char* serverPath = "/history"; // Backend path
 
 // Static IP config
-IPAddress local_IP(192, 168, 1, 220);
+IPAddress local_IP(192, 168, 1, 220); 
 IPAddress gateway(192, 168, 1, 1);
 IPAddress subnet(255, 255, 255, 0);
 IPAddress primaryDNS(8, 8, 8, 8);
@@ -51,9 +50,7 @@ IPAddress secondaryDNS(8, 8, 4, 4);
 #define ESP_MAIL_DEFAULT_FLASH_FS SPIFFS
 #define SMTP_HOST "smtp.gmail.com"
 #define SMTP_PORT 465
-#define AUTHOR_EMAIL "23520617@gm.uit.edu.vn"
-#define AUTHOR_PASSWORD "wfrvhnalukgsozjo" //replace with your app password on uploading, DO NOT PUBLISH THIS CODE UNLESS THIS ONE IS REPLACED
-#define RECIPIENT_EMAIL "levinhhuyyt1@gmail.com"
+
 // Global variables 
 // - For data
 float temperature = 0.0;
@@ -70,9 +67,9 @@ RTC_DATA_ATTR int lowerThreshold = 30;
 RTC_DATA_ATTR int upperThreshold = 60; 
 bool isPumpOn = false; 
 bool isManualMode = false;
-bool dhtSent = false; //flag for sending email
-bool rtcSent = false;
-bool waterSent = false;
+RTC_DATA_ATTR bool dhtSent = false; //flag for sending email
+RTC_DATA_ATTR bool rtcSent = false;
+RTC_DATA_ATTR bool waterSent = false;
 bool valid = false; //for checking data's validity
 unsigned long pumpTimer = 0; //timer for pump - limiting watering time
 
@@ -309,8 +306,8 @@ void collectData(){
     temperature = dht.readTemperature();
     humidity = dht.readHumidity();
     soilMoisture = readSoilMois();
-    
     valid = true;
+
     if (isnan(temperature) || isnan(humidity)) {
         Serial.println("Failed to read from DHT sensor!");
         //temperature = 0.0; //fallback value
@@ -433,7 +430,7 @@ void saveData(const String& payload){
     //check file's size
     size_t fileSize = file.size();
      if(fileSize + payload.length() > MAX_FILE_SIZE){
-        //File size exceeds limit, deleting oldest entries...
+        Serial.println("File size exceeds limit, deleting oldest entries...");
         file.close();
         //read entries
         File readFile = SPIFFS.open(DATA_FILE, FILE_READ);
@@ -446,7 +443,7 @@ void saveData(const String& payload){
         //split into lines
         int newlineIndex = allData.indexOf('\n');
         if(newlineIndex == -1){
-            //No data to delete, overwriting file...
+            Serial.println("No data to delete, overwriting file...");
             SPIFFS.remove(DATA_FILE);
             file = SPIFFS.open(DATA_FILE, FILE_WRITE);
         }

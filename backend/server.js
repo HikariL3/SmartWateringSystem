@@ -23,7 +23,7 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'toilaphamhung10',
+    password: process.env.DB_PASSWORD || 'hikari',
     database: process.env.DB_NAME || 'watering_system'
 });
 

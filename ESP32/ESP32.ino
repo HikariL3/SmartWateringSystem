@@ -1,5 +1,5 @@
 //BEFORE RUNNING
-//NECESSARY LIBRARY
+//NECESSARY LIBRARY:
 /*
 - RTClib by Adafruit
 - ESPAsyncWebSrv by dvarrel / or ESPAsyncWebServer by lacamera (need testing)
@@ -25,11 +25,10 @@ Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy c�
 #include <ArduinoJson.h>
 #include <RTClib.h>
 #include <ESP_Mail_Client.h>
-//#include <NTPClient.h>
 
 const char* ssid = "Meow ~"; //change to the wifi your laptop is using - 2.4GHz only
 const char* password = "nhaconuoimeo"; //same as above
-const char* serverHost = "192.168.1.72"; // Backend host - CHANGE TO MATCH YOUR CURRENT IP
+const char* serverHost = "192.168.1.116"; // Backend host - CHANGE TO MATCH YOUR CURRENT IP
 const int serverPort = 3000; // Backend port
 const char* serverPath = "/history"; // Backend path
 
@@ -42,19 +41,18 @@ IPAddress secondaryDNS(8, 8, 4, 4);
 
 // Pin - change if needed
 #define RELAY_PIN 17
-#define SOIL_MOISTURE_PIN 34 
+#define SOIL_MOISTURE_PIN 33 
 #define DHTPIN 23
-#define WATER_LEVEL_SENSOR 14
+#define WATER_LEVEL_SENSOR 34
 #define CLOCK_INTERRUPT_PIN GPIO_NUM_4
 #define DHTTYPE DHT22
-DHT dht(DHTPIN, DHTTYPE);
 
 //mail service
 #define ESP_MAIL_DEFAULT_FLASH_FS SPIFFS
 #define SMTP_HOST "smtp.gmail.com"
 #define SMTP_PORT 465
 #define AUTHOR_EMAIL "23520617@gm.uit.edu.vn"
-#define AUTHOR_PASSWORD "exhyfgjkflvjnetl" //replace with your app password on uploading, DO NOT PUBLISH THIS CODE UNLESS THIS ONE IS REPLACED
+#define AUTHOR_PASSWORD "wfrvhnalukgsozjo" //replace with your app password on uploading, DO NOT PUBLISH THIS CODE UNLESS THIS ONE IS REPLACED
 #define RECIPIENT_EMAIL "levinhhuyyt1@gmail.com"
 // Global variables 
 // - For data
@@ -62,8 +60,8 @@ float temperature = 0.0;
 float humidity = 0.0;
 float soilMoisture = 0.0;
 int water = 0; //analog read for this one
-String date = "2025/05/03"; 
-String time0 = "12:39:40";
+String date = "0000-00-00";
+String time0 = "00:00:00";
 
 // - For controlling
 //with RTC_DATA_ATTR is to save data in RTC memory instead of SRAM, preventing data loss after deep sleep
@@ -72,9 +70,13 @@ RTC_DATA_ATTR int lowerThreshold = 30;
 RTC_DATA_ATTR int upperThreshold = 60; 
 bool isPumpOn = false; 
 bool isManualMode = false;
+bool dhtSent = false; //flag for sending email
+bool rtcSent = false;
+bool waterSent = false;
+bool valid = false; //for checking data's validity
 unsigned long pumpTimer = 0; //timer for pump - limiting watering time
 
-const unsigned long INTERVAL = 15000; //data collection interval, can be changed
+const unsigned long INTERVAL = 30000; //data collection interval, can be changed
 const unsigned long CHECK_INTERVAL = 2000; //for continuous check while pump is on 
 const unsigned long PUMP_DURATION = 10000; //max duration for pump on in manual mode
 
@@ -83,17 +85,15 @@ const char* DATA_FILE = "/data.json";
 const size_t MAX_FILE_SIZE = 10*1024; //10 kB, can be adjusted
 
 const uint64_t DEEP_SLEEP_DURATION = 1 * 3600 * 1000000ULL; // 1 hour in microsec
-bool isDSMode = false; //Deep Sleep Mode
-bool dhtSent = false; //flag for sending email
-bool rtcSent = false;
-bool waterSent = false;
+RTC_DATA_ATTR bool isDSMode = false; //Deep Sleep Mode
 
 AsyncWebServer server(80);
+DHT dht(DHTPIN, DHTTYPE);
 RTC_DS3231 rtc; //object
 SMTPSession smtp;
 Session_Config config;
 
-bool waitForNetwork(uint8_t retries = 10) {
+bool waitNetwork(uint8_t retries = 10) {
     uint8_t attempt = 0;
     while (WiFi.status() != WL_CONNECTED && attempt < retries) {
         Serial.print("Connecting to WiFi (Attempt ");
@@ -112,11 +112,6 @@ bool waitForNetwork(uint8_t retries = 10) {
 
     Serial.println("WiFi connection failed after retries");
     return false;
-}
-
-//deep sleep implementation
-void IRAM_ATTR onAlarm() {
-    //empty
 }
 
 void smtpCallback(SMTP_Status status) {
@@ -201,6 +196,11 @@ void emailSending(const char* subject, const char* content) { //using char* sinc
     }
 }
 
+//deep sleep implementation
+void IRAM_ATTR onAlarm() {
+    //empty
+}
+
 void setDSAlarm(){
     rtc.disable32K(); //we dont use this
     rtc.writeSqwPinMode(DS3231_OFF);
@@ -212,13 +212,10 @@ void setDSAlarm(){
 
     //set alarm 1 to trigger at 00:00:00 everyday
     DateTime now = rtc.now();
+    isDSMode = (now.hour() >= 0 && now.hour() < 5);
     DateTime alarmTime = DateTime(now.year(), now.month(), now.day(), 0, 0, 0);
     if (now.hour() >= 0 && now.hour() < 5) {
-        //intended deep sleep time, enter deep sleep (if run at compile time)
         isDSMode = true;
-        if (now.hour() < 4) {
-            alarmTime = DateTime(now.year(), now.month(), now.day(), now.hour() + 1, 0, 0);
-        }
     } else {
         if (now.hour() >= 5) {
             alarmTime = alarmTime + TimeSpan(1, 0, 0, 0); //next day
@@ -240,24 +237,20 @@ void setDSAlarm(){
 void enterDeepSleep() {
     Serial.println("Entering deep sleep for 1 hour...");
     DateTime now = rtc.now();
-    if (now.hour() < 4) { // Set alarm for next hour if before 04:00
+    if (now.hour() < 4) { //Set alarm for next hour if before 04:00
         DateTime nextAlarm = DateTime(now.year(), now.month(), now.day(), now.hour() + 1, 0, 0);
         if (!rtc.setAlarm1(nextAlarm, DS3231_A1_Hour)) {
             Serial.println("Error setting hourly alarm");
         } else {
             Serial.println("Hourly alarm set for " + String(nextAlarm.hour()) + ":00:00");
-        }
+        }  
     }
     esp_sleep_enable_ext0_wakeup(CLOCK_INTERRUPT_PIN, 0); // wake on LOW (SQW is active LOW)
-    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_DURATION); // fallback timer - used from 4am - 5am
+    esp_sleep_enable_timer_wakeup(DEEP_SLEEP_DURATION); // fallback timer 
     esp_deep_sleep_start();
 }
 
 //reader
-int waterLevelSensor(){
-    return analogRead(WATER_LEVEL_SENSOR);
-}
-
 float readSoilMois(){
     int value = analogRead(SOIL_MOISTURE_PIN);
     float soilPercentage = map(value, 1100, 4095, 100, 0);
@@ -293,20 +286,39 @@ bool getTime(String &date, String &time0) {
      return true;
 }
 
+bool waterLevel(){
+    water = analogRead(WATER_LEVEL_SENSOR);
+    if(water < 1400){
+        Serial.println("Water level is running low");
+        if(!waterSent && WiFi.status() == WL_CONNECTED) {
+            emailSending("[LOW ON WATER]", "Please refill the water for the pump to run.");
+            waterSent = true;
+            Serial.println("Email notification for water refill sent");
+        }
+        return false; 
+    } else {
+        if(waterSent){
+            Serial.println("Water refilled!");
+            waterSent = false;
+            }
+        }
+    return true;
+}
+
 void collectData(){
     temperature = dht.readTemperature();
     humidity = dht.readHumidity();
     soilMoisture = readSoilMois();
-    water = waterLevelSensor();
-
+    
+    valid = true;
     if (isnan(temperature) || isnan(humidity)) {
         Serial.println("Failed to read from DHT sensor!");
-        temperature = 0.0; //temporary fallback value
-        humidity = 0.0;
+        //temperature = 0.0; //fallback value
+        //humidity = 0.0;
+        valid = false;
         if(!dhtSent && WiFi.status() == WL_CONNECTED) {
             emailSending("[DHT FAILURE]", "Please check your DHT22 wirings");
             dhtSent = true;
-            Serial.println("Email notification for DHT22 failure sent");
         }
     } else {
         if(dhtSent){
@@ -316,27 +328,23 @@ void collectData(){
     }
     if (!getTime(date, time0)) {
         Serial.println("Failed to read from DS3231");
-        date = "2025/05/03"; 
-        time0 = "12:39:40";   
-    }
-    if(water < 1400){
-        Serial.println("Water level is running low");
-        if(!waterSent && WiFi.status() == WL_CONNECTED) {
-            emailSending("[LOW ON WATER]", "Please refill the water for the pump to run");
-            waterSent = true;
-            Serial.println("Email notification for water refill sent");
-    } else {
-        if(waterSent){
-            Serial.println("Water refilled!");
-            waterSent = false;
-            }
-        }
+        // date = "0000/00/00"; //fallback value
+        // time0 = "00:00:00";
+        valid = false;
     }
 }
 
 void controlAutomatic(){
     if (isManualMode) return;
     soilMoisture = readSoilMois();
+    if(!waterLevel()){
+        Serial.println("Water level is too low, cancel watering");
+        if(isPumpOn){
+            isPumpOn = false;
+            digitalWrite(RELAY_PIN, LOW);
+            return;
+        }
+    }
     if (soilMoisture < lowerThreshold && !isPumpOn) {
         digitalWrite(RELAY_PIN, HIGH);
         isPumpOn = true;
@@ -357,7 +365,7 @@ void controlManual(){
     if(current - lastCheck < CHECK_INTERVAL) return;
     lastCheck = current;
     collectData();
-
+    if(!valid) return;
     String payload = "{\"plantID\": \"" + String(plantID) + "\", " +
                          "\"soilMoisture\": " + String(soilMoisture, 2) + ", " +
                          "\"temperature\": " + String(temperature, 2) + ", " +
@@ -370,7 +378,7 @@ void controlManual(){
             Serial.println("Manual mode: Data sent to server");
         } 
     }
-    if (isManualMode && (current - pumpTimer > PUMP_DURATION )) {
+    if (current - pumpTimer > PUMP_DURATION ) {
         digitalWrite(RELAY_PIN, LOW);
         isPumpOn = false;
         isManualMode = false;
@@ -380,6 +388,7 @@ void controlManual(){
 
 //data processing
 void processData(){
+    if(!valid) return;
     String payload = "{\"plantID\": \"" + String(plantID) + "\", " +
                          "\"soilMoisture\": " + String(soilMoisture, 2) + ", " +
                          "\"temperature\": " + String(temperature, 2) + ", " +
@@ -398,7 +407,7 @@ void processData(){
     } else {
         Serial.println("WiFi disconnected, reconnecting...");
         WiFi.reconnect();
-        if (waitForNetwork(15)) {
+        if (waitNetwork(15)) {
             Serial.print("Reconnected to WiFi: ");
             Serial.println(WiFi.localIP());
             if(sendData(payload)){
@@ -415,7 +424,6 @@ void processData(){
     }
 }
 
-//saving data using SPIFFS
 void saveData(const String& payload){
     File file = SPIFFS.open(DATA_FILE, FILE_APPEND);
     if(!file){
@@ -521,7 +529,6 @@ void sendSaved(){
 
 void setup() {
     Serial.begin(115200);
-
     // SENSOR INIT SECTION
     // init pin
     pinMode(RELAY_PIN, OUTPUT);
@@ -539,7 +546,7 @@ void setup() {
 
     if (!rtc.begin()) {
     Serial.println("Couldn't find DS3231 RTC");
-    while (1) delay (50); // Halt if RTC not found
+    while (1) delay (100); // Halt if RTC not found
     }
 
     if (rtc.lostPower()) {
@@ -554,7 +561,7 @@ void setup() {
 
     // Connect to WiFi
     WiFi.begin(ssid, password);
-    if (!waitForNetwork(15)) {
+    if (!waitNetwork(15)) {
         Serial.println("Network setup failed, restarting...");
         ESP.restart();
     }
@@ -562,7 +569,7 @@ void setup() {
     //DEEP SLEEP SET UP
     setDSAlarm();
 
-    //EMAIL SECTION
+    //EMAIL SET UP
     emailSetup();
 
     //CORS headers 
@@ -667,16 +674,10 @@ void setup() {
 }
 
 void loop() {
+    DateTime now = rtc.now();
     if (rtc.alarmFired(1)) {
         rtc.clearAlarm(1);
-        DateTime now = rtc.now();
-        if (now.hour() == 0 && now.minute() == 0 && now.second() == 0) {
-            isDSMode = true;
-            Serial.println("Alarm triggered at 00:00:00, entering deep sleep mode");
-        } 
     }
-
-    DateTime now = rtc.now();
     if (now.hour() >= 0 && now.hour() < 5) {
         isDSMode = true;
     } else {
@@ -698,6 +699,7 @@ void loop() {
             collectData();
             controlAutomatic();
             processData(); // Send or save
+            if(valid)
             lastCollection = current;
         }
     } else {
@@ -721,7 +723,7 @@ To-do list:
 - While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record (done)
 - Add error handling for DHT22 and DS3231 instead of using fallback value (done)
 - Warning when water is running low (done)
-- IMPLEMENT GRAPH DATA ON SERVER SIDE
+- IMPLEMENT GRAPH DATA ON SERVER SIDE (done)
 Further enhancement: (if time allows)
-- Make a simple model
+- Make a simple model (Shopee shipping delayed, lmao)
 */

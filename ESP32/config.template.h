@@ -1,3 +1,6 @@
+//before running, copy this file or rename this file, set its name to "config.h"
+//change below info to run
+
 #ifndef CONFIG_H
 #define CONFIG_H
 

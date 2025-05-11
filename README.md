@@ -22,7 +22,7 @@ A smart irrigation system developed as a project for the **Embedded System & Wir
 
 ## Hardware Requirements
 - ESP32 Development Board (e.g., ESP32-WROOM-32)
-- Capacitive Soil Moisture Sensor
+- Capactive Soil Moisture Sensor
 - DHT22 Temperature and Humidity Sensor
 - DS3231 RTC Module
 - Water Pump (with relay module for control)

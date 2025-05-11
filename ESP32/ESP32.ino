@@ -73,7 +73,7 @@ RTC_DATA_ATTR bool waterSent = false;
 bool valid = false; //for checking data's validity
 unsigned long pumpTimer = 0; //timer for pump - limiting watering time
 
-const unsigned long INTERVAL = 30000; //data collection interval, can be changed
+const unsigned long INTERVAL = 60000; //data collection interval, can be changed
 const unsigned long CHECK_INTERVAL = 2000; //for continuous check while pump is on 
 const unsigned long PUMP_DURATION = 10000; //max duration for pump on in manual mode
 
@@ -286,7 +286,6 @@ bool getTime(String &date, String &time0) {
 bool waterLevel(){
     water = analogRead(WATER_LEVEL_SENSOR);
     if(water < 1400){
-        Serial.println("Water level is running low");
         if(!waterSent && WiFi.status() == WL_CONNECTED) {
             emailSending("[LOW ON WATER]", "Please refill the water for the pump to run.");
             waterSent = true;
@@ -714,7 +713,7 @@ void loop() {
 }
 
 /* 
-To-do list:
+To-do list:f
 - Wire DS3231 and water level sensor (done)
 - Check DS3231 and water level functionality (done)
 - While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record (done)

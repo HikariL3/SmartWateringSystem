@@ -360,6 +360,15 @@ void controlManual(){
     unsigned long current = millis();
     if(current - lastCheck < CHECK_INTERVAL) return;
     lastCheck = current;
+    if(!waterLevel()){
+        Serial.println("Water level is too low, cancel watering");
+        if(isPumpOn){
+            isPumpOn = false;
+            isManualMode = false;
+            digitalWrite(RELAY_PIN, LOW);
+            return;
+        }
+    }
     collectData();
     if(!valid) return;
     String payload = "{\"plantID\": \"" + String(plantID) + "\", " +
@@ -713,8 +722,9 @@ void loop() {
 }
 
 /* 
-To-do list:f
+To-do list:
 - Wire DS3231 and water level sensor (done)
+727 is gud tho
 - Check DS3231 and water level functionality (done)
 - While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record (done)
 - Add error handling for DHT22 and DS3231 instead of using fallback value (done)

@@ -16,7 +16,7 @@ Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy c�
 - Adafruit SSD1306
 */
 //NECESSARY BOARD - go to board manager -> INSTALLED esp32 by Espressif -> VERSION 3.0.7 - NEWER VERSION WILL GET tcp_alloc ERROR
-//BEFORE UPLOADING: Tools -> Partition Scheme -> NO OTA () (2MB APP/2MB SPIFFS) - using Default will fuck up the memory
+//BEFORE UPLOADING: Tools -> Partition Scheme -> NO OTA (2MB APP/2MB SPIFFS) - using Default will fuck up the memory
 //There is a config.h file that contain personal's info configuration, change it before you run. 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -27,6 +27,8 @@ Chắc là thế, nhưng mà nếu như không được thì cài thêm mấy c�
 #include <RTClib.h>
 #include <ESP_Mail_Client.h>
 #include "config.h"
+#include "esp_task_wdt.h"
+#include <esp_log.h>
 
 const int serverPort = 3000; // Backend port
 const char* serverPath = "/history"; // Backend path
@@ -76,6 +78,7 @@ unsigned long pumpTimer = 0; //timer for pump - limiting watering time
 const unsigned long INTERVAL = 60000; //data collection interval, can be changed
 const unsigned long CHECK_INTERVAL = 2000; //for continuous check while pump is on 
 const unsigned long PUMP_DURATION = 10000; //max duration for pump on in manual mode
+const unsigned long SERVER_CHECK_INTERVAL = 10000; //constantly check for server availability and send saved data
 
 //SPIFFS to store data
 const char* DATA_FILE = "/data.json";
@@ -225,7 +228,7 @@ void setDSAlarm(){
         + String(alarmTime.month()) + "-" + String(alarmTime.day()) + " " 
         + String(alarmTime.hour()) + ":00:00");
     }
-
+ 
     //configure SQW pin for interrupt
     pinMode(CLOCK_INTERRUPT_PIN, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(CLOCK_INTERRUPT_PIN), onAlarm, FALLING);
@@ -346,12 +349,12 @@ void controlAutomatic(){
         isPumpOn = true;
         Serial.println("Pump turned ON (Automatic): Soil moisture (" + String(soilMoisture) + ") below lower threshold (" + String(lowerThreshold) + ")");
     } 
-    else if (soilMoisture > (upperThreshold - 5) && isPumpOn) {
+    else if (soilMoisture > (upperThreshold - 15) && isPumpOn) {
         digitalWrite(RELAY_PIN, LOW);
         isPumpOn = false;
         collectData();
         processData();
-        Serial.println("Pump turned OFF (Automatic): Soil moisture (" + String(soilMoisture) + ") above upper threshold (" + String(upperThreshold) + ")");
+        Serial.println("Pump turned OFF (Automatic): Soil moisture (" + String(soilMoisture) + ")");
     }
 }
 
@@ -389,6 +392,15 @@ void controlManual(){
         isManualMode = false;
         Serial.println("Pump turned OFF (Manual): Max duration reached.");
     }
+}
+
+bool serverOn() { //check server availability for sending saved data
+    WiFiClient client;
+    if (!client.connect(serverHost, serverPort, 2000)) { 
+        return false;
+    }
+    client.stop(); 
+    return true;
 }
 
 //data processing
@@ -523,17 +535,19 @@ void sendSaved(){
     }
     file.close();
     File checkFile = SPIFFS.open(DATA_FILE, FILE_READ);
-    if (!SPIFFS.exists(DATA_FILE) ||checkFile && checkFile.size() == 0){
+    if (!SPIFFS.exists(DATA_FILE) || checkFile && checkFile.size() == 0){
         checkFile.close();
         return;
     }
     if (checkFile) checkFile.close();
-    SPIFFS.remove(DATA_FILE);
+    //SPIFFS.remove(DATA_FILE);
     Serial.println("Cleared saved data from SPIFFS");
 }
 
 void setup() {
     Serial.begin(115200);
+    esp_log_level_set("task_wdt", ESP_LOG_NONE);
+    esp_task_wdt_deinit();
     // SENSOR INIT SECTION
     // init pin
     pinMode(RELAY_PIN, OUTPUT);
@@ -570,7 +584,6 @@ void setup() {
         Serial.println("Network setup failed, restarting...");
         ESP.restart();
     }
-    
     //DEEP SLEEP SET UP
     setDSAlarm();
 
@@ -697,9 +710,22 @@ void loop() {
     }
 
     static unsigned long lastCollection = 0;
+    static unsigned long lastServer = 0; //used to check if server is on to send data without waiting for next data connection.
     unsigned long current = millis();
 
     if (!isPumpOn) {
+        if (current - lastServer >= SERVER_CHECK_INTERVAL && WiFi.status() == WL_CONNECTED){
+            File checkFile = SPIFFS.open(DATA_FILE, FILE_READ);
+            if (checkFile && checkFile.size() > 0) {
+                checkFile.close();
+                if (serverOn()){
+                    sendSaved();
+                }
+            } else if (checkFile) {
+            checkFile.close();
+            }
+            lastServer = current;                                 //me when I see 727, lmao .______.
+        }
         if (current - lastCollection >= INTERVAL) {
             collectData();
             controlAutomatic();
@@ -717,19 +743,18 @@ void loop() {
                 controlAutomatic(); // no continuous sending
             }
         }
-    }
+    } 
      delay(100); //avoid tight loop
 }
 
 /* 
 To-do list:
 - Wire DS3231 and water level sensor (done)
-727 is gud tho
 - Check DS3231 and water level functionality (done)
 - While watering, continuously track soil moisture (no need to send data, send when pump is off) instead of waiting for the next record (done)
 - Add error handling for DHT22 and DS3231 instead of using fallback value (done)
 - Warning when water is running low (done)
 - IMPLEMENT GRAPH DATA ON SERVER SIDE (done)
 Further enhancement: (if time allows)
-- Make a simple model (Shopee shipping delayed, lmao)
+- Make a simple model (Done)
 */

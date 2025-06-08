@@ -1,10 +1,12 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const https = require('https');
+const fs = require('fs');
 
 require('dotenv').config();
 
-// Handle unhandled promise rejections to prevent server crashes
+// Handle unhandled promise rejectins to prevent server crashes
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
 });
@@ -12,10 +14,25 @@ process.on('unhandledRejection', (reason, promise) => {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// enable https with self-signed certificate 
+// const httpsOptions = {
+//     key: fs.readFileSync('key.pem'),
+//     cert: fs.readFileSync('cert.pem')
+// };
+
+//enable dynamic CORS
 app.use(cors({
-    origin: 'http://127.0.0.1:8080',
+    origin: (origin, callback) => {
+        const allowed = ['http://127.0.0.1:8080', 'https://localhost:8080'];
+        if (!origin || allowed.includes(origin)) {
+            callback(null, origin || allowed[0]);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: ['GET', 'POST', 'DELETE'],
-    allowedHeaders: ['Content-Type']
+    allowedHeaders: ['Authorization', 'Content-Type'],
+    credentials: true
 }));
 
 app.use(express.json());
@@ -23,7 +40,7 @@ app.use(express.json());
 const db = mysql.createConnection({
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'hikari',
+    password: process.env.DB_PASSWORD || 'toilaphamhung10',
     database: process.env.DB_NAME || 'watering_system'
 });
 
@@ -272,6 +289,11 @@ app.delete('/plants/:plantID', (req, res) => {
         });
     });
 });
+
+// Start HTTPS server
+// https.createServer(httpsOptions, app).listen(port, '0.0.0.0', () => {
+//     logger.info(`Server running on port ${port} with HTTPS`);
+// });
 
 app.listen(port, '0.0.0.0', () => {
     console.log(`Server running on port ${port}`);

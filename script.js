@@ -769,7 +769,6 @@ document.addEventListener('DOMContentLoaded', function () {
         setInterval(async () => {
             if (currentPlantID) {
             try {
-                console.log(`Polling for plantID ${currentPlantID} at ${new Date().toLocaleTimeString()} with since ${latestTimestamps[currentPlantID] || 'null'}`);
                 await updatePlantInfo(currentPlantID);
                 await updateChart(currentPlantID, true);
                 } 
